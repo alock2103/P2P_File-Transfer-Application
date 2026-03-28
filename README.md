@@ -396,7 +396,7 @@ java -version
 
 | Name | Role | Contributions |
 |------|------|---------------|
-| **Shatab Shameer Zaman** | Backend development, network protocol, handshake implementation |
+| **Shatab Shameer Zaman** | Backend Developer | Backend development, network protocol, handshake implementation |
 | **Nicholas Cordeiro** | Backend Developer | File I/O, multi-threading, performance optimization |
 | **Samantha Whan** | Frontend Developer | UI/UX design, Swing components, user experience |
 | **Nand Thaker** | Testing & Documentation | Quality assurance, user guide, troubleshooting |
@@ -445,5 +445,3 @@ SOFTWARE.
 - TCP/IP protocol design inspired by RFC 793
 - Network interface detection techniques adapted from Java NetworkInterface API documentation
 - UI design follows Java Swing best practices and accessibility guidelines
-
----
