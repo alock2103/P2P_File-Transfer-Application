@@ -1,61 +1,189 @@
 import java.io.*;
 import java.net.*;
 
+/**
+ * Three-Way Handshake Protocol for P2P File Transfer
+ *
+ * Implements a custom application-layer handshake protocol modeled after TCP's
+ * SYN → SYN-ACK → ACK pattern. Ensures both sender and receiver are authenticated
+ * and synchronized before any file data is transferred.
+ *
+ * Protocol Flow:
+ *
+ * Receiver (P1)                    Sender (P2)
+ * ─────────────                    ───────────
+ * [1] SYN        ──────────────>   Receives SYN
+ *     {password, sessionId}        Verifies password
+ *
+ *                <──────────────   [2] SYN-ACK
+ *                                      {status, fileName, fileSize}
+ * Receives SYN-ACK
+ * Validates sessionId
+ *
+ * [3] ACK        ──────────────>   Receives ACK
+ *     {READY flag}                 Validates READY
+ *
+ *                <══════════════   [4] File data transfer begins
+ *
+ * Security Features:
+ * - Password authentication in SYN message
+ * - Session ID validation to prevent replay attacks
+ * - READY flag confirmation before data transfer
+ * - 15-second timeout per handshake step
+ *
+ * @author Shatab Shameer Zaman (Backend Development)
+ * @author Nicholas Cordeiro (Backend Development)
+ * @author Samantha Whan (Frontend/UI Development)
+ * @author Nand Thaker (Testing and Documentation)
+ * @version 1.0
+ * @since 2026-02-14
+ */
 public class Handshake {
 
-    // ── Message type tokens ──────────────────────────────────────────
+    /**
+     * Message type constant for SYN (synchronize) message.
+     * Sent by receiver to initiate handshake.
+     */
     public static final String SYN     = "SYN";
+
+    /**
+     * Message type constant for SYN-ACK (synchronize-acknowledge) message.
+     * Sent by sender in response to SYN, includes file metadata.
+     */
     public static final String SYN_ACK = "SYN-ACK";
+
+    /**
+     * Message type constant for ACK (acknowledge) message.
+     * Sent by receiver to confirm readiness to receive file.
+     */
     public static final String ACK     = "ACK";
-    public static final String NACK    = "NACK";   // negative ack (error)
-    public static final String READY   = "READY";  // P1 ready to receive
 
-    // ── Status codes inside SYN-ACK ─────────────────────────────────
-    public static final String STATUS_OK            = "OK";
-    public static final String STATUS_WRONG_PASS    = "ERR_WRONG_PASSWORD";
-    public static final String STATUS_NO_FILE       = "ERR_NO_FILE";
-    public static final String STATUS_SESSION_MISMATCH = "ERR_SESSION_MISMATCH";
+    /**
+     * Message type constant for NACK (negative acknowledge) message.
+     * Sent when handshake fails due to authentication or protocol error.
+     */
+    public static final String NACK    = "NACK";
 
-    // ── Timeout (ms) waiting for each handshake step ─────────────────
-    public static final int TIMEOUT_MS = 15_000;  // 15 seconds
+    /**
+     * Flag constant indicating receiver is ready to receive file data.
+     * Sent in ACK message by receiver.
+     */
+    public static final String READY   = "READY";
 
-    // ─────────────────────────────────────────────────────────────────
-    //  DATA STRUCTURES
-    // ─────────────────────────────────────────────────────────────────
+    /**
+     * Status code indicating successful handshake step.
+     */
+    public static final String STATUS_OK                = "OK";
 
-    /** Represents a single handshake message on the wire */
+    /**
+     * Status code indicating password authentication failure.
+     */
+    public static final String STATUS_WRONG_PASS        = "ERR_WRONG_PASSWORD";
+
+    /**
+     * Status code indicating no file is available for transfer.
+     */
+    public static final String STATUS_NO_FILE           = "ERR_NO_FILE";
+
+    /**
+     * Status code indicating session ID mismatch between handshake steps.
+     */
+    public static final String STATUS_SESSION_MISMATCH  = "ERR_SESSION_MISMATCH";
+
+    /**
+     * Timeout for each handshake step in milliseconds (15 seconds).
+     * Prevents indefinite blocking if peer disconnects during handshake.
+     * Applied to socket read operations during SYN, SYN-ACK, and ACK exchanges.
+     */
+    public static final int TIMEOUT_MS = 15_000;
+
+    /**
+     * Represents a handshake message transmitted over the network.
+     *
+     * This class encapsulates all data exchanged during the three-way handshake
+     * protocol. Different message types (SYN, SYN-ACK, ACK, NACK) use different
+     * subsets of these fields.
+     *
+     * Field Usage by Message Type:
+     * - SYN: type, sessionId, password
+     * - SYN-ACK: type, sessionId, status, fileName, fileSize
+     * - ACK: type, sessionId, flag (READY)
+     * - NACK: type, sessionId, status (error reason)
+     */
     public static class Message implements Serializable {
-        public String type;       // SYN / SYN-ACK / ACK / NACK
-        public String sessionId;  // unique ID for this transfer session
-        public String status;     // OK or ERR_xxx
-        public String password;   // sent only in SYN
-        public String fileName;   // sent in SYN-ACK
-        public long   fileSize;   // sent in SYN-ACK
-        public String flag;       // READY  (sent in ACK by P1)
-        public String senderIP;   // informational
-        public int    senderPort; // informational
+        /** Message type: SYN, SYN-ACK, ACK, or NACK */
+        public String type;
 
+        /** Unique session identifier generated by receiver */
+        public String sessionId;
+
+        /** Status code: OK or ERR_xxx */
+        public String status;
+
+        /** Password for authentication (only in SYN) */
+        public String password;
+
+        /** Name of file to transfer (only in SYN-ACK) */
+        public String fileName;
+
+        /** Size of file in bytes (only in SYN-ACK) */
+        public long   fileSize;
+
+        /** READY flag (only in ACK from receiver) */
+        public String flag;
+
+        /** Sender's IP address (informational) */
+        public String senderIP;
+
+        /** Sender's port number (informational) */
+        public int    senderPort;
+
+        /**
+         * Constructs a new handshake message of the specified type.
+         *
+         * @param type Message type (SYN, SYN-ACK, ACK, or NACK)
+         */
         public Message(String type) { this.type = type; }
 
-        @Override //ZAMAN74
+        @Override
         public String toString() {
-            return "[" + type + "]"
-                    + " session=" + sessionId
-                    + " status="  + status
-                    + " file="    + fileName
-                    + " size="    + fileSize
-                    + " flag="    + flag;
+            return "[" + type + "] session=" + sessionId + " status=" + status
+                    + " file=" + fileName + " size=" + fileSize + " flag=" + flag;
         }
     }
 
-    /** Result returned to both sides after handshake completes */
+    /**
+     * Result of handshake operation returned to caller.
+     *
+     * Contains handshake success status, error reason if failed, session ID,
+     * and file metadata. Both sender and receiver methods return this result
+     * to indicate handshake outcome.
+     */
     public static class Result {
+        /** True if handshake completed successfully, false if failed */
         public final boolean success;
-        public final String  reason;     // human-readable if failed
+
+        /** Human-readable error reason if handshake failed, null if successful */
+        public final String  reason;
+
+        /** Session ID established during handshake */
         public final String  sessionId;
+
+        /** Name of file to transfer */
         public final String  fileName;
+
+        /** Size of file in bytes */
         public final long    fileSize;
 
+        /**
+         * Constructs a handshake result.
+         *
+         * @param success True if handshake succeeded
+         * @param reason Error message if failed, or "OK" if succeeded
+         * @param sessionId Session ID from handshake
+         * @param fileName Name of file to transfer
+         * @param fileSize Size of file in bytes
+         */
         public Result(boolean success, String reason,
                       String sessionId, String fileName, long fileSize) {
             this.success   = success;
@@ -63,18 +191,41 @@ public class Handshake {
             this.sessionId = sessionId;
             this.fileName  = fileName;
             this.fileSize  = fileSize;
-        } //ZAMAN74
+        }
 
+        /**
+         * Creates a failed handshake result with error reason.
+         *
+         * @param reason Error message explaining failure
+         * @return Result object with success=false
+         */
         public static Result fail(String reason) {
             return new Result(false, reason, null, null, 0);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  WIRE HELPERS  (send / receive a Message over a socket)
-    // ─────────────────────────────────────────────────────────────────
-
-    /** Sends a Message over the given DataOutputStream */
+    /**
+     * Sends a Message object over a DataOutputStream.
+     *
+     * Serializes all message fields to the output stream in a fixed order.
+     * Null strings are converted to empty strings before transmission to
+     * avoid NullPointerException during deserialization.
+     *
+     * Wire Format:
+     * 1. type (UTF-8 string)
+     * 2. sessionId (UTF-8 string)
+     * 3. status (UTF-8 string)
+     * 4. password (UTF-8 string)
+     * 5. fileName (UTF-8 string)
+     * 6. fileSize (64-bit long)
+     * 7. flag (UTF-8 string)
+     * 8. senderIP (UTF-8 string)
+     * 9. senderPort (32-bit int)
+     *
+     * @param dos Output stream to write message to
+     * @param msg Message object to serialize and send
+     * @throws IOException if write operation fails
+     */
     public static void send(DataOutputStream dos, Message msg) throws IOException {
         dos.writeUTF(msg.type);
         dos.writeUTF(nullSafe(msg.sessionId));
@@ -88,7 +239,16 @@ public class Handshake {
         dos.flush();
     }
 
-    /** Reads a Message from the given DataInputStream */
+    /**
+     * Receives a Message object from a DataInputStream.
+     *
+     * Deserializes message fields from the input stream in the same fixed order
+     * used by the send() method. Blocks until all fields are read or timeout occurs.
+     *
+     * @param dis Input stream to read message from
+     * @return Deserialized Message object
+     * @throws IOException if read operation fails or timeout occurs
+     */
     public static Message receive(DataInputStream dis) throws IOException {
         Message msg = new Message(dis.readUTF());
         msg.sessionId  = dis.readUTF();
@@ -102,11 +262,31 @@ public class Handshake {
         return msg;
     }
 
+    /**
+     * Converts null strings to empty strings for safe serialization.
+     *
+     * @param s String to check
+     * @return Original string if not null, empty string if null
+     */
     private static String nullSafe(String s) { return s == null ? "" : s; }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  SESSION ID GENERATOR
-    // ─────────────────────────────────────────────────────────────────
+    /**
+     * Generates a unique session ID combining timestamp and random number.
+     *
+     * Session IDs are used to prevent replay attacks and ensure both parties
+     * are communicating about the same transfer session. The ID is generated
+     * by the receiver and echoed back by the sender in all subsequent messages.
+     *
+     * Format: SID-[HEX_TIMESTAMP]-[5_DIGIT_RANDOM]
+     * Example: SID-18F3A2B4C5D-42857
+     *
+     * Components:
+     * - "SID-" prefix for easy identification in logs
+     * - Hexadecimal timestamp (milliseconds since epoch)
+     * - 5-digit random number (00000-99999)
+     *
+     * @return Unique session identifier string
+     */
     public static String generateSessionId() {
         long ts   = System.currentTimeMillis();
         int  rand = (int)(Math.random() * 99999);
@@ -114,10 +294,38 @@ public class Handshake {
                 + "-" + String.format("%05d", rand);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  P2  SIDE  –  performSenderHandshake()
-    //  Called by FileSender AFTER a client socket is accepted.
-    // ─────────────────────────────────────────────────────────────────
+    /**
+     * Performs sender-side handshake after accepting a connection from receiver.
+     *
+     * This method implements the sender's role in the three-way handshake protocol.
+     * It waits for the receiver's SYN, validates the password, sends SYN-ACK with
+     * file metadata, and waits for final ACK before allowing file transfer to begin.
+     *
+     * Steps:
+     * 1. Receive SYN from receiver with password and session ID
+     * 2. Validate password against expected value
+     * 3. Send SYN-ACK with OK status and file metadata (name, size)
+     * 4. Receive ACK with READY flag from receiver
+     * 5. Validate session ID matches in all messages
+     *
+     * Timeout Handling:
+     * Socket timeout is set to TIMEOUT_MS (15 seconds) for each blocking read.
+     * If receiver doesn't respond within timeout, SocketTimeoutException is thrown.
+     * After successful handshake, timeout is reset to 0 (infinite) for file transfer.
+     *
+     * Security:
+     * - Password must match exactly (case-sensitive)
+     * - Session ID must remain consistent across all messages
+     * - READY flag must be present in final ACK
+     *
+     * @param clientSocket Socket connected to receiver
+     * @param correctPassword Expected password for authentication
+     * @param fileName Name of file to transfer
+     * @param fileSize Size of file in bytes
+     * @param log Logging interface for UI updates
+     * @return Result with success status and file metadata
+     * @throws IOException if network error occurs or timeout expires
+     */
     public static Result performSenderHandshake(
             Socket       clientSocket,
             String       correctPassword,
@@ -130,7 +338,7 @@ public class Handshake {
         DataInputStream  dis = new DataInputStream(clientSocket.getInputStream());
         DataOutputStream dos = new DataOutputStream(clientSocket.getOutputStream());
 
-        // ── STEP 1 : Receive SYN from P1 ────────────────────────────
+        // STEP 1: Receive SYN from receiver
         log.info("Waiting for SYN from receiver...");
         Message syn = receive(dis);
         if (!SYN.equals(syn.type)) {
@@ -139,7 +347,7 @@ public class Handshake {
         }
         log.info("← SYN received  [session=" + syn.sessionId + "]");
 
-        // ── STEP 1b: Verify password ─────────────────────────────────
+        // STEP 1b: Verify password
         if (!correctPassword.equals(syn.password)) {
             log.warn("Wrong password in SYN!");
             Message nack = new Message(NACK);
@@ -150,17 +358,16 @@ public class Handshake {
         }
         log.info("Password verified ✓");
 
-        // ── STEP 2 : Send SYN-ACK to P1 ─────────────────────────────
+        // STEP 2: Send SYN-ACK to receiver
         Message synAck = new Message(SYN_ACK);
-        synAck.sessionId  = syn.sessionId;   // echo back same session ID
+        synAck.sessionId  = syn.sessionId;
         synAck.status     = STATUS_OK;
         synAck.fileName   = fileName;
         synAck.fileSize   = fileSize;
         send(dos, synAck);
-        log.info("→ SYN-ACK sent   [file=" + fileName
-                + ", size=" + fileSize + " bytes]");
+        log.info("→ SYN-ACK sent   [file=" + fileName + ", size=" + fileSize + " bytes]");
 
-        // ── STEP 3 : Receive ACK from P1 ────────────────────────────
+        // STEP 3: Receive ACK from receiver
         Message ack = receive(dis);
         if (!ACK.equals(ack.type)) {
             return Result.fail("Expected ACK, got " + ack.type);
@@ -174,16 +381,43 @@ public class Handshake {
         }
         log.info("← ACK received   [flag=READY] — HANDSHAKE COMPLETE ✓");
 
-        // Remove per-message timeout now; file transfer sets its own
+        // Remove timeout for file transfer phase
         clientSocket.setSoTimeout(0);
 
         return new Result(true, "OK", syn.sessionId, fileName, fileSize);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  P1  SIDE  –  performReceiverHandshake()
-    //  Called by FileReceiver after connecting to P2.
-    // ─────────────────────────────────────────────────────────────────
+    /**
+     * Performs receiver-side handshake after connecting to sender.
+     *
+     * This method implements the receiver's role in the three-way handshake protocol.
+     * It initiates the handshake by sending SYN with password, waits for SYN-ACK
+     * with file metadata, validates the response, and sends final ACK to signal
+     * readiness to receive file data.
+     *
+     * Steps:
+     * 1. Generate unique session ID
+     * 2. Send SYN with password and session ID to sender
+     * 3. Receive SYN-ACK from sender (or NACK if authentication failed)
+     * 4. Validate session ID matches
+     * 5. Send ACK with READY flag to confirm readiness
+     *
+     * Timeout Handling:
+     * Socket timeout is set to TIMEOUT_MS (15 seconds) for each blocking read.
+     * If sender doesn't respond within timeout, SocketTimeoutException is thrown.
+     * After successful handshake, timeout is reset to 0 (infinite) for file reception.
+     *
+     * Error Conditions:
+     * - Wrong password: Sender sends NACK with STATUS_WRONG_PASS
+     * - Session ID mismatch: SYN-ACK session ID doesn't match sent SYN
+     * - Protocol error: Expected SYN-ACK but received different message type
+     *
+     * @param serverSocket Socket connected to sender
+     * @param password Password for authentication
+     * @param log Logging interface for UI updates
+     * @return Result with file metadata if successful, error reason if failed
+     * @throws IOException if network error occurs or timeout expires
+     */
     public static Result performReceiverHandshake(
             Socket       serverSocket,
             String       password,
@@ -196,14 +430,14 @@ public class Handshake {
 
         String sessionId = generateSessionId();
 
-        // ── STEP 1 : Send SYN to P2 ─────────────────────────────────
+        // STEP 1: Send SYN to sender
         Message syn = new Message(SYN);
         syn.sessionId = sessionId;
         syn.password  = password;
         send(dos, syn);
         log.info("→ SYN sent       [session=" + sessionId + "]");
 
-        // ── STEP 2 : Receive SYN-ACK (or NACK) from P2 ──────────────
+        // STEP 2: Receive SYN-ACK (or NACK) from sender
         log.info("Waiting for SYN-ACK from sender...");
         Message synAck = receive(dis);
 
@@ -227,22 +461,30 @@ public class Handshake {
         log.info("← SYN-ACK received [file=" + synAck.fileName
                 + ", size=" + synAck.fileSize + " bytes]");
 
-        // ── STEP 3 : Send ACK to P2 ─────────────────────────────────
+        // STEP 3: Send ACK to sender
         Message ack = new Message(ACK);
         ack.sessionId = sessionId;
         ack.flag      = READY;
         send(dos, ack);
         log.info("→ ACK sent       [flag=READY] — HANDSHAKE COMPLETE ✓");
 
+        // Remove timeout for file reception phase
         serverSocket.setSoTimeout(0);
 
         return new Result(true, "OK",
                 sessionId, synAck.fileName, synAck.fileSize);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  Internal helper
-    // ─────────────────────────────────────────────────────────────────
+    /**
+     * Sends a NACK (negative acknowledgment) message with error reason.
+     *
+     * Internal helper method used when handshake fails on sender side.
+     * NACK messages inform the receiver why authentication or protocol validation failed.
+     *
+     * @param dos Output stream to send NACK on
+     * @param reason Error reason (STATUS_WRONG_PASS, STATUS_SESSION_MISMATCH, etc.)
+     * @throws IOException if send operation fails
+     */
     private static void sendNack(DataOutputStream dos, String reason)
             throws IOException {
         Message nack = new Message(NACK);
@@ -250,11 +492,34 @@ public class Handshake {
         send(dos, nack);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  LOGGING INTERFACE  (so both Swing apps can show log in UI)
-    // ─────────────────────────────────────────────────────────────────
+    /**
+     * Logging interface for handshake progress updates.
+     *
+     * Implemented by UI components to display real-time handshake protocol
+     * messages in the application's log area. Allows separation between
+     * protocol logic (this class) and presentation (Swing UI).
+     *
+     * Usage Example:
+     * Handshake.performSenderHandshake(socket, password, fileName, fileSize,
+     *     new Handshake.HandshakeLog() {
+     *         public void info(String m) { logArea.append("✔ " + m + "\n"); }
+     *         public void warn(String m) { logArea.append("✘ " + m + "\n"); }
+     *     }
+     * );
+     */
     public interface HandshakeLog {
+        /**
+         * Logs an informational message (successful step).
+         *
+         * @param msg Message to log
+         */
         void info(String msg);
+
+        /**
+         * Logs a warning message (failed step or error).
+         *
+         * @param msg Warning message to log
+         */
         void warn(String msg);
     }
 }
