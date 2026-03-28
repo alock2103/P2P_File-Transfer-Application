@@ -1,37 +1,6 @@
 import java.io.*;
 import java.net.*;
 
-/**
- * ═══════════════════════════════════════════════════════════════════
- *  THREE-WAY HANDSHAKE PROTOCOL
- * ═══════════════════════════════════════════════════════════════════
- *
- *  Mirrors TCP's SYN → SYN-ACK → ACK pattern but at
- *  the application layer, so both sides KNOW the connection
- *  is alive and authenticated before any file data moves.
- *
- *  FLOW:
- *
- *  P1 (Receiver)                       P2 (Sender / Server)
- *  ─────────────                       ────────────────────
- *  [1] Sends SYN   ──────────────────► Receives SYN
- *      {password, sessionId}            Verifies password
- *                                       Stores sessionId
- *
- *                  ◄────────────────── [2] Sends SYN-ACK
- *                                          {status, sessionId,
- *                                           fileName, fileSize}
- *  Receives SYN-ACK
- *  Checks status == OK
- *  Checks sessionId matches
- *
- *  [3] Sends ACK   ──────────────────► Receives ACK
- *      {sessionId, READY}               Checks READY flag
- *
- *                                       [4] Starts sending file ──►
- * //ZAMAN74//ZAMAN74//ZAMAN74//ZAMAN74
- * ═══════════════════════════════════════════════════════════════════
- */
 public class Handshake {
 
     // ── Message type tokens ──────────────────────────────────────────
@@ -148,7 +117,6 @@ public class Handshake {
     // ─────────────────────────────────────────────────────────────────
     //  P2  SIDE  –  performSenderHandshake()
     //  Called by FileSender AFTER a client socket is accepted.
-    //  Handles steps [receive SYN] → [send SYN-ACK] → [receive ACK]
     // ─────────────────────────────────────────────────────────────────
     public static Result performSenderHandshake(
             Socket       clientSocket,
@@ -215,7 +183,6 @@ public class Handshake {
     // ─────────────────────────────────────────────────────────────────
     //  P1  SIDE  –  performReceiverHandshake()
     //  Called by FileReceiver after connecting to P2.
-    //  Handles steps [send SYN] → [receive SYN-ACK] → [send ACK]
     // ─────────────────────────────────────────────────────────────────
     public static Result performReceiverHandshake(
             Socket       serverSocket,
