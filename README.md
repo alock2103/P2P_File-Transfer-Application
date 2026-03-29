@@ -156,7 +156,7 @@ Get these values from the sender:
 - **Port**: Port number (e.g., `49200`)
 - **Password**: Exact password (case-sensitive)
 
-#### 2. Connect
+#### 2. Connect 
 - Click **"Connect & Start Handshake"**
 - Select folder to save all files
 - Handshake log shows authentication progress
