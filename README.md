@@ -324,7 +324,7 @@ Receiver                 Sender
 - ✅ WiFi + Ethernet: Choose the one both machines use
 - ✅ Example: Both on WiFi → select WiFi adapter IP
 
-### Transfer Issues
+### Transfer Issues 
 
 #### Slow transfer speed
 **Causes & Solutions**:
