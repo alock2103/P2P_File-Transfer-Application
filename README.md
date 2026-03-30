@@ -358,7 +358,7 @@ javac *.java
 java -version
 
 # If < 11, update JDK
-# Windows: Download from https://adoptium.net/
+# Windows: download from https://adoptium.net/
 # macOS: brew install openjdk@11
 # Linux: sudo apt install openjdk-11-jdk
 ```
