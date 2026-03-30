@@ -436,7 +436,7 @@ SOFTWARE.
 
 - **GitHub Repository**: https://github.com/alock2103/P2P_File-Transfer-Application
 - **Demo Video**: [Coming soon]
-- **Documentation**: See `docs/` folder for additional guides
+- **Documentation**: See Final_Report
 
 ---
 
